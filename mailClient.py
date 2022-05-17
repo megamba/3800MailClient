@@ -9,7 +9,8 @@ from ssl import Options
 import ssl
 import webbrowser
 from PyQt5.QtWidgets import *
-from PyQt5 import QtWidgets, uic
+from PyQt5 import QtCore, QtGui, QtWidgets, uic
+from PyQt5.QtWidgets import QDialog
 import sys
 
 import base64
@@ -21,12 +22,14 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 
+
 class MyGUI(QMainWindow):
 
     # init values to use in other functions
     client_socket = None
     hasAttachments = False
     sender = ""
+    
 
     def __init__(self, parent=None):
         super(MyGUI, self).__init__()
@@ -45,6 +48,8 @@ class MyGUI(QMainWindow):
         self.dialog = InboxGUI(self)
 
         self.attachments = []
+        
+
 
     # authenticate socket connection
     def authenticate_connection(self, sender, password):
@@ -65,9 +70,19 @@ class MyGUI(QMainWindow):
 
         # send password
         self.client_socket.send(b'%s\r\n' % base64Password)
-        recv2 = self.client_socket.recv(1024)
+        recv = self.client_socket.recv(1024)
         print('password response: ', recv[:3].decode())
-        print('authenticaiton successful')
+        
+        if recv[:3] == b'235':
+            print('authenticaiton successful')
+        else:
+            print('something went wrong')
+            print('sender: ', sender)
+            print('pass: ', password)
+            self.emailEdit.clear()
+            self.passwordEdit.clear()
+            self.SMTPEdit.clear()
+            self.portEdit.clear()
         
     # Login using SMTP server given and Port number
     def login(self):
@@ -75,19 +90,20 @@ class MyGUI(QMainWindow):
         global client_socket
         try:
 
-            sender = self.emailEdit.text()
 
             # eastblish SSl connection with socket
             try:
                 print('trying to wrap socket')
+                self.client_socket = socket(AF_INET, SOCK_STREAM)
                 self.client_socket = ssl.wrap_socket(self.client_socket)
+                print('wrapped socket')
                 self.client_socket.connect(('smtp.gmail.com', 465)) # ssl connection
+                print('connected')
 
                 recv = self.client_socket.recv(1024)
                 print('wrap reponse: ', recv[:3].decode())
 
             except Exception as e:
-                print("could not wrap socket")
                 print('\n\n' + e + '\n\n')
 
             print("done wrapping socket")
@@ -102,6 +118,9 @@ class MyGUI(QMainWindow):
             self.server.starttls()
             self.server.ehlo()
             self.server.login(self.emailEdit.text(), self.passwordEdit.text())
+            
+            self.dialog.email = self.emailEdit.text()
+            self.dialog.password = self.passwordEdit.text()
             
             #disable login credential fields
             self.emailEdit.setEnabled(False)
@@ -226,21 +245,35 @@ class MyGUI(QMainWindow):
                 message_box.setText('Mail Sent')
                 message_box.exec()
                 
+                # clear message values
+                self.messageEdit.clear()
+                self.subjectEdit.clear()
+                self.toEdit.clear()
+                
             except:
                 message_box = QMessageBox()
                 message_box.setText('Sending Mail Failed')
                 message_box.exec()
-    
+
     def openInbox(self):
+        #self.secondWindow = InboxGUI()
+        print(self.emailEdit.text())
+        print(self.passwordEdit.text())
+        
+        #self.secondWindow.email.setText(self.emailEdit.text())
+        #self.secondWindow.passw.setText(self.passwordEdit.text())
+        
         self.dialog.show()
 
+
 class InboxGUI(QMainWindow):
+    
     def __init__(self, parent=None):
         super(InboxGUI, self).__init__()
         uic.loadUi("InboxUI.ui", self)
-        
+
         self.pushButton.clicked.connect(self.showInbox)
-        
+  
         self.emails = []
         self.rowCount = 0
         self.rowView.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
@@ -249,8 +282,7 @@ class InboxGUI(QMainWindow):
         
         self.emailView.clear()
 
-        # self.pushButton.clicked.connect(self.print_inbox)
-        
+      
     def showInbox(self):
         # clear old emails
         self.rowCount = 0
@@ -258,9 +290,12 @@ class InboxGUI(QMainWindow):
         self.emails = {}
         
         # create an IMAP4 class with SSL 
-        imap = imaplib.IMAP4_SSL("imap.gmail.com")
+        imap = imaplib.IMAP4_SSL("imap.gmail.com",993)
+        
+        print("hello: "+self.email)
+        print(self.password)
         # authenticate
-        imap.login("cpp.cs.testmail@gmail.com", "broncoTesting1!")
+        imap.login(self.email, self.password)
         
         status, messages = imap.select("INBOX")
         # number of top emails to fetch
@@ -323,68 +358,13 @@ class InboxGUI(QMainWindow):
         imap.close()
         imap.logout()
 
-    # print the inbox to the console
-    def print_inbox(self):
-
-        # create an IMAP4 class with SSL 
-        imap = imaplib.IMAP4_SSL("imap.gmail.com", 993)
-
-        # authenticate
-        imap.login("cpp.cs.testmail@gmail.com", "broncoTesting1!")
-
-        # select the folder to extract from
-        imap.select('Inbox')
-
-        # get all emails without searching for a key
-        result,  data = imap.uid('search', None, "ALL")
-
-        if result == 'OK':
-
-            # separate mail IDs
-            mail_id_list = data[0].split()
-
-            # get message data
-            messages = list()
-            for i in mail_id_list:
-                result, data = imap.uid('fetch', i, '(RFC822)')
-                if result == 'OK':
-                    messages.append(data)
-
-            # print message data to console
-            for msg in messages:
-                
-                # for each part of the message
-                for response_part in msg:
-                    
-                    # if the current response part is a tuple
-                    if type(response_part) is tuple:
-                        
-                        # print information
-                        current_message = message_from_bytes((response_part[1]))
-
-                        print("===========================================")
-                        print("From: ", current_message['from'])
-                        print("Subject: ", current_message['subject'])
-                        print("Body: ")
-
-                        # for  each part in the body
-                        for part in current_message.walk():
-
-                            # if the part is plain text, print it
-                            if part.get_content_type() == 'text/plain':
-                                print(part.get_payload())
-
-        # end imap connection
-        imap.close()
-        imap.logout()
-
     def showEmail(self, mi):
             row = mi.row()
             column = mi.column()
             body = self.emails[row]
             print(row)
             print(body)
-            self
+            self.emailView.setText(body)
 
 
 app = QtWidgets.QApplication(sys.argv)
