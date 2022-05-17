@@ -97,7 +97,7 @@ class MyGUI(QMainWindow):
                 self.client_socket = socket(AF_INET, SOCK_STREAM)
                 self.client_socket = ssl.wrap_socket(self.client_socket)
                 print('wrapped socket')
-                self.client_socket.connect(('smtp.gmail.com', 465)) # ssl connection
+                self.client_socket.connect((self.SMTPEdit.text(), 465)) # ssl connection
                 print('connected')
 
                 recv = self.client_socket.recv(1024)
